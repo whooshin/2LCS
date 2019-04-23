@@ -25,9 +25,9 @@ namespace LCS.Forms
         private bool _cheSortAscending = true;
         private bool _saasSortAscending = true;
         private CookieContainer _cookies;
-        private static string _lcsUrl = "https://lcs.dynamics.com";
-        private static string _lcsUpdateUrl = "https://update.lcs.dynamics.com";
-        private static string _lcsDiagUrl = "https://diag.lcs.dynamics.com";
+        private static readonly string _lcsUrl = "https://lcs.dynamics.com";
+        private static readonly string _lcsUpdateUrl = "https://update.lcs.dynamics.com";
+        private static readonly string _lcsDiagUrl = "https://diag.lcs.dynamics.com";
 
         private List<ProjectInstance> Instances;
         private List<LcsProject> Projects;
@@ -157,6 +157,8 @@ namespace LCS.Forms
                 pi = dgvType.GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
                 if (pi != null) pi.SetValue(saasDataGridView, true, null);
             }
+            cheDataGridView.Columns["cheDeployedOn"].DefaultCellStyle.Format = "yyyy-MM-dd HH:mm";
+            saasDataGridView.Columns["saasDeployedOn"].DefaultCellStyle.Format = "yyyy-MM-dd HH:mm";
             cheDataGridView.DataSource = _cheInstancesSource;
             saasDataGridView.DataSource = _saasInstancesSource;
         }
@@ -363,7 +365,7 @@ namespace LCS.Forms
         }
 
 
-        private void cheExportRDMConnectionsToolStripMenuItem_Click(object sender, EventArgs e)
+        private void CheExportRDMConnectionsToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (_cheInstancesList == null) return;
             Cursor = Cursors.WaitCursor;
@@ -414,7 +416,7 @@ namespace LCS.Forms
             Cursor = Cursors.Default;
         }
 
-        private void saasExportRDMConnectionsToolStripMenuItem_Click(object sender, EventArgs e)
+        private void SaasExportRDMConnectionsToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (_saasInstancesList == null) return;
             Cursor = Cursors.WaitCursor;
@@ -601,7 +603,6 @@ namespace LCS.Forms
 
         private void ChangeProjectMenuItem_Click(object sender, EventArgs e)
         {
-            Cursor = Cursors.WaitCursor;
             using (var form = new ChooseProject())
             {
                 form.HttpClientHelper = _httpClientHelper;
@@ -636,24 +637,58 @@ namespace LCS.Forms
                     RefreshSaas(false);
                 }
             }
-            Cursor = Cursors.Default;
         }
 
         private void SaasDeleteNsgRule_Click(object sender, EventArgs e)
         {
-            using (var form = new DeleteNsg())
+            Cursor = Cursors.WaitCursor;
+            NSGRule nsgRule = null;
+            StringBuilder log = new StringBuilder();
+            var tasks = new List<Task<string>>();
+            foreach (DataGridViewRow row in SelectedDataGridView.SelectedRows)
             {
-                form.ShowDialog();
-                if (form.Cancelled || (String.IsNullOrEmpty(form.Rule))) return;
-                Cursor = Cursors.WaitCursor;
-                var tasks = new List<Task>();
-                foreach (DataGridViewRow row in saasDataGridView.SelectedRows)
+                var instance = (CloudHostedInstance)row.DataBoundItem;
+                if (nsgRule == null)
                 {
-                    tasks.Add(Task.Run(() => new HttpClientHelper(_cookies) { LcsUrl = _lcsUrl, LcsUpdateUrl = _lcsUpdateUrl, LcsDiagUrl = _lcsDiagUrl, LcsProjectId = _selectedProject.Id.ToString() }.DeleteNsgRule((CloudHostedInstance)row.DataBoundItem, form.Rule)));
+                    var networkSecurityGroup = _httpClientHelper.GetNetworkSecurityGroup(instance);
+                    using (var form = new ChooseNSG())
+                    {
+                        form.NetworkSecurityGroup = networkSecurityGroup;
+                        form.Text = $"Choose firewall rule to delete";
+                        form.ShowDialog();
+                        if (!form.Cancelled && (form.NSGRule != null))
+                        {
+                            nsgRule = form.NSGRule;
+                            log.AppendLine($"Firewall rule to be deleted: {nsgRule.Name}, IP: {nsgRule.IpOrCidr}");
+                            log.AppendLine();
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
                 }
-                Task.WhenAll(tasks).Wait();
-                Cursor = Cursors.Default;
+                if (nsgRule != null)
+                {
+                    tasks.Add(Task.Run(() => new HttpClientHelper(_cookies) { LcsUrl = _lcsUrl, LcsUpdateUrl = _lcsUpdateUrl, LcsDiagUrl = _lcsDiagUrl, LcsProjectId = _selectedProject.Id.ToString() }.DeleteNsgRule(instance, nsgRule.Name)));
+                }
             }
+            Task.WhenAll(tasks).Wait();
+            var logEntries = tasks.Select(x => x.Result).ToList();
+            foreach (var entry in logEntries)
+            {
+                log.AppendLine(entry);
+            }
+            if (log.Length != 0)
+            {
+                var form = new LogDisplay
+                {
+                    LogEntries = log.ToString(),
+                    Text = $"Log for deletion of firewall rule: {nsgRule.Name}"
+                };
+                form.Show();
+            }
+            Cursor = Cursors.Default;
         }
 
         private void StartInstanceMenuItem_Click(object sender, EventArgs e)
@@ -731,7 +766,7 @@ namespace LCS.Forms
                     var form = new Credentials
                     {
                         CredentialsDict = _httpClientHelper.GetCredentials(instance.EnvironmentId, vm.ItemName),
-                        Caption = $"Instance: {instance.InstanceId}, VM: {vm.MachineName}"
+                        Text = $"Instance: {instance.InstanceId}, VM: {vm.MachineName}"
                     };
                     form.Show();
                 }
@@ -757,7 +792,7 @@ namespace LCS.Forms
                 }
                 var form = new Credentials
                 {
-                    Caption = $"Instance: {instance.InstanceId}",
+                    Text = $"Instance: {instance.InstanceId}",
                     CredentialsDict = credentials
                 };
                 form.Show();
@@ -1042,10 +1077,10 @@ namespace LCS.Forms
                     details.AppendLine($"Username: {rdpEntry.Domain}\\{rdpEntry.Username}");
                     details.Append($"Password: {rdpEntry.Password}");
                 }
-                var form = new RdpDetails
+                var form = new LogDisplay
                 {
                     Text = $"RDP connection details for {instance.DisplayName}",
-                    Details = details.ToString()
+                    LogEntries = details.ToString()
                 };
                 form.Show();
             }
@@ -1105,7 +1140,7 @@ namespace LCS.Forms
             Cursor = Cursors.WaitCursor;
             var menuItem = (sender as ToolStripMenuItem);
             HotfixesType hotfixesType;
-            var label = "";
+            string label;
             switch (menuItem.Name)
             {
                 case "cheMetadataHotfixesToolStripMenuItem":
@@ -1303,7 +1338,7 @@ namespace LCS.Forms
                         instanceDetailsTable.Rows[2].Cells[0].Paragraphs[0].Append("Topology");
                         instanceDetailsTable.Rows[2].Cells[1].Paragraphs[0].Append(saasInstance.TopologyDisplayName);
                         instanceDetailsTable.Rows[3].Cells[0].Paragraphs[0].Append("Deployed on");
-                        instanceDetailsTable.Rows[3].Cells[1].Paragraphs[0].Append(saasInstance.DeployedOn);
+                        instanceDetailsTable.Rows[3].Cells[1].Paragraphs[0].Append(saasInstance.DeployedOn.ToString("yyyy-MM-dd H:mm"));
                         instanceDetailsTable.Rows[4].Cells[0].Paragraphs[0].Append("Deployed by");
                         instanceDetailsTable.Rows[4].Cells[1].Paragraphs[0].Append(saasInstance.DeployedBy);
                         instanceDetailsTable.Rows[5].Cells[0].Paragraphs[0].Append("Environment admin");
@@ -1423,7 +1458,7 @@ namespace LCS.Forms
                         instanceDetailsTable.Rows[2].Cells[0].Paragraphs[0].Append("Topology");
                         instanceDetailsTable.Rows[2].Cells[1].Paragraphs[0].Append(instance.TopologyDisplayName);
                         instanceDetailsTable.Rows[3].Cells[0].Paragraphs[0].Append("Deployed on");
-                        instanceDetailsTable.Rows[3].Cells[1].Paragraphs[0].Append(instance.DeployedOn);
+                        instanceDetailsTable.Rows[3].Cells[1].Paragraphs[0].Append(instance.DeployedOn.ToString("yyyy-MM-dd H:mm"));
                         instanceDetailsTable.Rows[4].Cells[0].Paragraphs[0].Append("Deployed by");
                         instanceDetailsTable.Rows[4].Cells[1].Paragraphs[0].Append(instance.DeployedBy);
                         instanceDetailsTable.Rows[5].Cells[0].Paragraphs[0].Append("Environment admin");
@@ -1641,7 +1676,7 @@ namespace LCS.Forms
                 var form = new PowerShell
                 {
                     CredentialsDict = _httpClientHelper.GetCredentials(instance.EnvironmentId, vm.ItemName),
-                    Caption = $"Instance: {instance.InstanceId}, VM: {vm.MachineName}"
+                    Text = $"Instance: {instance.InstanceId}, VM: {vm.MachineName}"
                 };
                 form.Show();
             }
@@ -1666,7 +1701,7 @@ namespace LCS.Forms
                 }
                 var form = new PowerShell
                 {
-                    Caption = $"Instance: {instance.InstanceId}",
+                    Text = $"Instance: {instance.InstanceId}",
                     CredentialsDict = credentials
                 };
                 form.Show();
@@ -1695,6 +1730,102 @@ namespace LCS.Forms
                 }
             }
             Cursor = Cursors.Default;
+        }
+
+        private void DeployPackageToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Cursor = Cursors.WaitCursor;
+            DeployablePackage package = null;
+            StringBuilder log = new StringBuilder();
+            foreach (DataGridViewRow row in SelectedDataGridView.SelectedRows)
+            {
+                var instance = (CloudHostedInstance)row.DataBoundItem;
+                if (package == null)
+                {
+                    var packages = _httpClientHelper.GetPagedDeployablePackageList(instance);
+                    using (var form = new ChoosePackage())
+                    {
+                        form.Packages = packages;
+                        form.ShowDialog();
+                        if (!form.Cancelled && (form.DeployablePackage != null))
+                        {
+                            package = form.DeployablePackage;
+                            log.AppendLine($"Chosen package name: {package.Name}");
+                            log.AppendLine($"Chosen package description: {package.Description}");
+                            log.AppendLine($"Chosen package platform version: {package.PlatformVersion}");
+                            log.AppendLine();
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                }
+                if (package != null)
+                {
+                    var applyLog = _httpClientHelper.ApplyPackage(instance, package);
+                    log.AppendLine(applyLog);
+                }
+            }
+            if (log.Length != 0)
+            {
+                var form = new LogDisplay
+                {
+                    LogEntries = log.ToString(),
+                    Text = $"Deployment log for package: {package.Name}"
+                };
+                form.Show();
+            }
+            Cursor = Cursors.Default;
+        }
+
+        private void SaasOpenRdpConnectionToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Cursor = Cursors.WaitCursor;
+            foreach (DataGridViewRow row in SelectedDataGridView.SelectedRows)
+            {
+                var instance = (CloudHostedInstance)row.DataBoundItem;
+                var rdpList = _httpClientHelper.GetRdpConnectionDetails(instance);
+                var form = new ChooseMachine
+                {
+                    Text = $"Choose machine to connect to. Instance: {instance.DisplayName}",
+                    RDPConnections = rdpList
+                };
+                form.ShowDialog();
+                if (!form.Cancelled && (form.RDPConnection != null))
+                {
+                    var rdpEntry = form.RDPConnection;
+                    using (new RdpCredentials(rdpEntry.Address, $"{rdpEntry.Domain}\\{rdpEntry.Username}", rdpEntry.Password))
+                    {
+                        var rdcProcess = new Process
+                        {
+                            StartInfo =
+                            {
+                                FileName = Environment.ExpandEnvironmentVariables(@"%SystemRoot%\system32\mstsc.exe"),
+                                Arguments = "/v " + $"{rdpEntry.Address}:{rdpEntry.Port}"
+                            }
+                        };
+                        rdcProcess.Start();
+                    }
+                }
+            }
+            Cursor = Cursors.Default;
+        }
+
+        private void CookieToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using (var form = new CookieEdit())
+            {
+                form.ShowDialog();
+                if (form.Cancelled || string.IsNullOrEmpty(form.Cookie)) return;
+                if (form.Cookie == Properties.Settings.Default.cookie) return;
+                Properties.Settings.Default.cookie = form.Cookie;
+                Properties.Settings.Default.projects = "";
+                Properties.Settings.Default.instances = "";
+                Properties.Settings.Default.Save();
+                MessageBox.Show("Application will now restart", "Message", MessageBoxButtons.OK);
+                Application.Restart();
+            }
         }
     }
 

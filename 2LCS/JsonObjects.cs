@@ -57,7 +57,7 @@ namespace LCS.JsonObjects
         public string EnvironmentAdmin { get; set; }
         public string BuildNumber { get; set; }
         public string BuildInfo { get; set; }
-        public string DeployedOn { get; set; }
+        public DateTime DeployedOn { get; set; }
         public string LicenseLink { get; set; }
         public bool CanStart { get; set; }
         public bool IsMaintainVisible { get; set; }
@@ -138,8 +138,8 @@ namespace LCS.JsonObjects
     public class Response
     {
         public bool Success { get; set; }
-        public object Message { get; set; }
-        public object MessageTitle { get; set; }
+        public string Message { get; set; }
+        public string MessageTitle { get; set; }
         public object Data { get; set; }
         public object ErrorList { get; set; }
         public int ErrorCode { get; set; }
@@ -177,7 +177,7 @@ namespace LCS.JsonObjects
         public int DisplayOrder { get; set; }
 }
 
-    public class SAASInstance
+    public class SaasInstance
     {
         public string DeploymentSkuName { get; set; }
         public object TopologyName { get; set; }
@@ -280,7 +280,7 @@ namespace LCS.JsonObjects
         public string Id { get; set; }
         public string ParentId { get; set; }
         public string ModelName { get; set; }
-        public string InstalledDate { get; set; }
+        public DateTime InstalledDate { get; set; }
         public string Version { get; set; }
         public string ModuleName { get; set; }
         public string Layer { get; set; }
@@ -299,5 +299,42 @@ namespace LCS.JsonObjects
     {
         public string Label { get; set; }
         public int Value { get; set; }
+    }
+
+    public class PackagesData
+    {
+        public int StartIndex { get; set; }
+        public int PagingType { get; set; }
+        public int TotalCount { get; set; }
+        public List<DeployablePackage> Results { get; set; }
+    }
+
+    public class DeployablePackage
+    {
+        public string Description { get; set; }
+        public int FileAssetDisplayVersion { get; set; }
+        public int LcsEnvironmentActionId { get; set; }
+        public string LcsEnvironmentId { get; set; }
+        public string ModifiedBy { get; set; }
+        public DateTime ModifiedDate { get; set; }
+        public string Name { get; set; }
+        public string PackageId { get; set; }
+        public string PackageType { get; set; }
+        public string PlatformVersion { get; set; }
+        public string Publisher { get; set; }
+    }
+
+    public class NSGRule
+    {
+        public DateTime Expiration { get; set; }
+        public string IpOrCidr { get; set; }
+        public string Name { get; set; }
+        public string Service { get; set; }
+    }
+
+    public class NetworkSecurityGroup
+    {
+        public string Name { get; set; }
+        public List<NSGRule> Rules { get; set; }
     }
 }
