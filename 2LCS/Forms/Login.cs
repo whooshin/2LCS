@@ -5,11 +5,12 @@ namespace LCS.Forms
 {
     public partial class Login : Form
     {
-        internal bool Cancelled { get; private set; }
         public Login()
         {
             InitializeComponent();
         }
+
+        internal bool Cancelled { get; private set; }
 
         private void Login_Load(object sender, EventArgs e)
         {
